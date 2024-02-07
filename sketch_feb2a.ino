@@ -1,3 +1,8 @@
+#include <MFRC522.h>
+#include <MFRC522Extended.h>
+#include <deprecated.h>
+#include <require_cpp11.h>
+
 /*
  * --------------------------------------------------------------------------------------------------------------------
  * Example sketch/program showing how to read data from a PICC to serial.
@@ -40,20 +45,67 @@
 
 #define RST_PIN         22         // Configurable, see typical pin layout above
 #define SS_PIN          5         // Configurable, see typical pin layout above
+#define inputPin        2
 
+byte Sensor_Pin = 2;//, LED_Pin = 5;
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
 
 void setup() {
 	Serial.begin(9600);		// Initialize serial communications with the PC
+
 	while (!Serial);		// Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
 	SPI.begin();			// Init SPI bus
 	mfrc522.PCD_Init();		// Init MFRC522
 	delay(4);				// Optional delay. Some board do need more time after init to be ready, see Readme
 	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
-	Serial.println(F("Scan PICC to see UID, SAK, type, and data blocks..."));
+	Serial.println("Hold your Student ID Card near to the Scanner..");
+  Serial.println();
+  
+  //Motion sensor
+  
+  pinMode(inputPin, INPUT);
+
+  //Sound sensor
+
+   pinMode(Sensor_Pin, INPUT);
+  //pinMode(LED_Pin, OUTPUT);
+  Serial.println("\n\nLet's Begin\n");
 }
 
 void loop() {
+
+  //Motion sensor
+  bool motion=digitalRead(inputPin); 
+  Serial.println(motion);
+ 
+
+
+bool Sensor_State = digitalRead(Sensor_Pin);
+  int Senor_Value = analogRead(A0);
+  Serial.println("\nSensor_State: " + String(Sensor_State));
+  //Serial.println("Senor_Value: " + String(Senor_Value));
+
+ //When output is Digital
+if (Sensor_State==true) {
+  //digitalWrite(LED_Pin, HIGH);
+ Serial.println("Sound Detected");
+ } else {
+  //digitalWrite(LED_Pin, LOW);
+  Serial.println("Sound Not Detected");
+}
+  
+
+    // When output is Analog
+    //if (Senor_Value < 85) {
+      //digitalWrite(LED_Pin, HIGH);
+   //   Serial.println("Sound Detected");
+   // } else {
+      //digitalWrite(LED_Pin, LOW);
+    //  Serial.println("Sound Not Detected");
+    //}
+  delay(1500);
+
+
 	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
 	if ( ! mfrc522.PICC_IsNewCardPresent()) {
 		return;
@@ -66,4 +118,30 @@ void loop() {
 
 	// Dump debug info about the card; PICC_HaltA() is automatically called
 	mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
+
+  Serial.print("Card ID: ");
+  String cardID = ""; //store the card's ID
+  for (byte i = 0; i< mfrc522.uid.size; i++){
+    Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
+    Serial.print(mfrc522.uid.uidByte[i], HEX);
+    cardID.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
+    cardID.concat(String(mfrc522.uid.uidByte[i], HEX));
+
+  }
+  Serial.println();
+  cardID.toUpperCase();
+  if(cardID.substring(1) == "73 33 84 A9")
+  {
+    Serial.println("Access Granted");
+    Serial.println();
+    delay(1500);
+
+  }
+  else{
+    Serial.println("Access Denied");
+    delay(1500);
+  }
+  
+
+  
 }
