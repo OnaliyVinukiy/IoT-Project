@@ -1,147 +1,156 @@
 #include <MFRC522.h>
 #include <MFRC522Extended.h>
-#include <deprecated.h>
-#include <require_cpp11.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <TimeLib.h> // Include the Time library
+#include <ArduinoJson.h>
 
-/*
- * --------------------------------------------------------------------------------------------------------------------
- * Example sketch/program showing how to read data from a PICC to serial.
- * --------------------------------------------------------------------------------------------------------------------
- * This is a MFRC522 library example; for further details and other examples see: https://github.com/miguelbalboa/rfid
- * 
- * Example sketch/program showing how to read data from a PICC (that is: a RFID Tag or Card) using a MFRC522 based RFID
- * Reader on the Arduino SPI interface.
- * 
- * When the Arduino and the MFRC522 module are connected (see the pin layout below), load this sketch into Arduino IDE
- * then verify/compile and upload it. To see the output: use Tools, Serial Monitor of the IDE (hit Ctrl+Shft+M). When
- * you present a PICC (that is: a RFID Tag or Card) at reading distance of the MFRC522 Reader/PCD, the serial output
- * will show the ID/UID, type and any data blocks it can read. Note: you may see "Timeout in communication" messages
- * when removing the PICC from reading distance too early.
- * 
- * If your reader supports it, this sketch/program will read all the PICCs presented (that is: multiple tag reading).
- * So if you stack two or more PICCs on top of each other and present them to the reader, it will first output all
- * details of the first and then the next PICC. Note that this may take some time as all data blocks are dumped, so
- * keep the PICCs at reading distance until complete.
- * 
- * @license Released into the public domain.
- * 
- * Typical pin layout used:
- * -----------------------------------------------------------------------------------------
- *             MFRC522      Arduino       Arduino   Arduino    Arduino          Arduino
- *             Reader/PCD   Uno/101       Mega      Nano v3    Leonardo/Micro   Pro Micro
- * Signal      Pin          Pin           Pin       Pin        Pin              Pin
- * -----------------------------------------------------------------------------------------
- * RST/Reset   RST          9             5         D9         RESET/ICSP-5     RST
- * SPI SS      SDA(SS)      10            53        D10        10               10
- * SPI MOSI    MOSI         11 / ICSP-4   51        D11        ICSP-4           16
- * SPI MISO    MISO         12 / ICSP-1   50        D12        ICSP-1           14
- * SPI SCK     SCK          13 / ICSP-3   52        D13        ICSP-3           15
- *
- * More pin layouts for other boards can be found here: https://github.com/miguelbalboa/rfid#pin-layout
- */
-
-#include <SPI.h>
-#include <MFRC522.h>
-
-#define RST_PIN         22         // Configurable, see typical pin layout above
-#define SS_PIN          5         // Configurable, see typical pin layout above
+#define RST_PIN         22
+#define SS_PIN          5
 #define inputPin        2
+#define Sensor_Pin      2
+#define lightPin 4
 
-byte Sensor_Pin = 2;//, LED_Pin = 5;
-MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance
+// Wi-Fi credentials
+const char* ssid = "OPPOF17";
+const char* password = "Onaliy12334";
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 void setup() {
-	Serial.begin(9600);		// Initialize serial communications with the PC
+  Serial.begin(9600);
+  while (!Serial); // Wait for serial port to connect. Needed for native USB port only
 
-	while (!Serial);		// Do nothing if no serial port is opened (added for Arduinos based on ATMEGA32U4)
-	SPI.begin();			// Init SPI bus
-	mfrc522.PCD_Init();		// Init MFRC522
-	delay(4);				// Optional delay. Some board do need more time after init to be ready, see Readme
-	mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
-	Serial.println("Hold your Student ID Card near to the Scanner..");
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("Connected to WiFi");
+
+  SPI.begin();
+  mfrc522.PCD_Init();
+  delay(4);
+  mfrc522.PCD_DumpVersionToSerial();
+  Serial.println("Hold your Student ID Card near to the Scanner..");
   Serial.println();
-  
-  //Motion sensor
-  
+
   pinMode(inputPin, INPUT);
-
-  //Sound sensor
-
-   pinMode(Sensor_Pin, INPUT);
-  //pinMode(LED_Pin, OUTPUT);
+  pinMode(Sensor_Pin, INPUT);
+  pinMode(lightPin, OUTPUT);
   Serial.println("\n\nLet's Begin\n");
 }
 
 void loop() {
+  bool accessGranted = false; // Initialize accessGranted variable
 
-  //Motion sensor
-  bool motion=digitalRead(inputPin); 
-  Serial.println(motion);
- 
+  // Motion sensor
+  bool motion = digitalRead(inputPin);
+  if (motion) {
+    Serial.println("Motion detected: " + String(motion));
+    digitalWrite(lightPin, LOW);
+  } else {
+    Serial.println("Motion not detected: " + String(motion));
+    digitalWrite(lightPin, HIGH);
+  }
 
-
-bool Sensor_State = digitalRead(Sensor_Pin);
+  bool Sensor_State = digitalRead(Sensor_Pin);
   int Senor_Value = analogRead(A0);
   Serial.println("\nSensor_State: " + String(Sensor_State));
-  //Serial.println("Senor_Value: " + String(Senor_Value));
 
- //When output is Digital
-if (Sensor_State==true) {
-  //digitalWrite(LED_Pin, HIGH);
- Serial.println("Sound Detected");
- } else {
-  //digitalWrite(LED_Pin, LOW);
-  Serial.println("Sound Not Detected");
-}
-  
+  if (Sensor_State == true) {
+    Serial.println("Sound Detected");
+  } else {
+    Serial.println("Sound Not Detected");
+  }
 
-    // When output is Analog
-    //if (Senor_Value < 85) {
-      //digitalWrite(LED_Pin, HIGH);
-   //   Serial.println("Sound Detected");
-   // } else {
-      //digitalWrite(LED_Pin, LOW);
-    //  Serial.println("Sound Not Detected");
-    //}
-  delay(1500);
+  delay(3000);
 
+  // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
+  if (!mfrc522.PICC_IsNewCardPresent()) {
+    return;
+  }
 
-	// Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
-	if ( ! mfrc522.PICC_IsNewCardPresent()) {
-		return;
-	}
+  // Select one of the cards
+  if (!mfrc522.PICC_ReadCardSerial()) {
+    return;
+  }
 
-	// Select one of the cards
-	if ( ! mfrc522.PICC_ReadCardSerial()) {
-		return;
-	}
-
-	// Dump debug info about the card; PICC_HaltA() is automatically called
-	mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
+  // Dump debug info about the card; PICC_HaltA() is automatically called
+  mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
 
   Serial.print("Card ID: ");
   String cardID = ""; //store the card's ID
-  for (byte i = 0; i< mfrc522.uid.size; i++){
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
     Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
     Serial.print(mfrc522.uid.uidByte[i], HEX);
-    cardID.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " "));
+    cardID.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : ""));
     cardID.concat(String(mfrc522.uid.uidByte[i], HEX));
-
   }
   Serial.println();
   cardID.toUpperCase();
-  if(cardID.substring(1) == "73 33 84 A9")
-  {
-    Serial.println("Access Granted");
-    Serial.println();
-    delay(1500);
 
-  }
-  else{
-    Serial.println("Access Denied");
-    delay(1500);
-  }
-  
+  // Get current date
+  String currentDate = getCurrentDate();
 
-  
+  // Get current time
+  String currentTime = getTimeFromArduino();
+
+  // Make HTTP GET request to Firebase to check booking status
+  String url = "https://smart-study-room-default-rtdb.firebaseio.com/.json"; // Replace <your-firebase-database-name> with your Firebase project name
+  HTTPClient http;
+  http.begin(url);
+  int httpCode = http.GET();
+  if (httpCode == HTTP_CODE_OK) {
+    String payload = http.getString();
+    Serial.println(payload);
+
+    // Parse JSON response
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = deserializeJson(doc, payload);
+    if (!error) {
+      // Check if the booking exists for the current card ID
+      JsonObject bookings = doc["bookings"];
+      for (JsonPair entry : bookings) {
+        String bookingStudentId = entry.value()["studentId"];
+        if (bookingStudentId == cardID) {
+          Serial.println("Access Granted");
+          accessGranted = true;
+          break; // Exit the loop if access is granted
+        }
+      }
+      if (!accessGranted) {
+        Serial.println("Access Denied");
+      }
+    } else {
+      Serial.println("Error parsing JSON response");
+    }
+  } else {
+    Serial.println("Error getting booking status from Firebase");
+  }
+  http.end();
+
+  delay(1500);
+}
+
+String getCurrentDate() {
+  // Get current date
+  int currentYear = year();
+  int currentMonth = month();
+  int currentDay = day();
+
+  String currentDate = String(currentYear) + "-" + String(currentMonth) + "-" + String(currentDay);
+  return currentDate;
+}
+
+String getTimeFromArduino() {
+  // Get current time
+  String currentTime = "";
+  int currentHour = hour();
+  int currentMinute = minute();
+  int currentSecond = second();
+
+  currentTime = String(currentHour) + ":" + String(currentMinute) + ":" + String(currentSecond);
+  return currentTime;
 }
