@@ -1,2 +1,1 @@
-# IoT-Project
-IoT Project
+This is a smart study room management system
