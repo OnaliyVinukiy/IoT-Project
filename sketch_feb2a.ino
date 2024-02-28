@@ -10,6 +10,7 @@
 #define inputPin        2
 #define Sensor_Pin      2
 #define lightPin 4
+#define soundpin 21
 
 // Wi-Fi credentials
 const char* ssid = "OPPOF17";
@@ -39,6 +40,7 @@ void setup() {
   pinMode(inputPin, INPUT);
   pinMode(Sensor_Pin, INPUT);
   pinMode(lightPin, OUTPUT);
+  pinMode(soundpin,OUTPUT);
   Serial.println("\n\nLet's Begin\n");
 }
 
@@ -50,9 +52,11 @@ void loop() {
   if (motion) {
     Serial.println("Motion detected: " + String(motion));
     digitalWrite(lightPin, LOW);
+    digitalWrite(soundpin,LOW);
   } else {
     Serial.println("Motion not detected: " + String(motion));
     digitalWrite(lightPin, HIGH);
+    digitalWrite(soundpin,HIGH);
   }
 
   bool Sensor_State = digitalRead(Sensor_Pin);
