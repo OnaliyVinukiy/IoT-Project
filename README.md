@@ -1,3 +1,2 @@
-<h2>Smart Study Room Management System</h2>
+<h1>Hey There!!</h1>
 
-This is a smart study room management system
