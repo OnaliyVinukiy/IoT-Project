@@ -2,9 +2,10 @@
 #include <MFRC522Extended.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <TimeLib.h> // Include the Time library
+#include <TimeLib.h>
 #include <ArduinoJson.h>
 
+// Define pins
 #define RST_PIN         22
 #define SS_PIN          5
 #define inputPin        2
@@ -17,11 +18,12 @@
 const char* ssid = "OPPOF17";
 const char* password = "Onaliy12334";
 
+// Initialize RFID reader
 MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial); // Wait for serial port to connect. Needed for native USB port only
+  while (!Serial);
 
   // Connect to WiFi
   WiFi.begin(ssid, password);
@@ -40,89 +42,68 @@ void setup() {
   Serial.println("Hold your Student ID Card near to the Scanner..");
   Serial.println();
 
-  // Initialize input pins
+  // Initialize pins
   pinMode(inputPin, INPUT);
   pinMode(Sensor_Pin, INPUT);
   pinMode(lightPin, OUTPUT);
-  Serial.println("\n\nLet's Begin\n");
-
-  // Initialize lock and sound pins
   pinMode(lockpin, OUTPUT);
   pinMode(soundpin, OUTPUT);
 
   // Configure time using NTP
-  Serial.println("Configuring time using NTP...");
-  configTime(5 * 3600 + 1800, 0, "pool.ntp.org"); // Set time via NTP for Indian Standard Time (UTC+5:30)
+  configTime(5 * 3600 + 1800, 0, "pool.ntp.org");
 
-  time_t now = time(nullptr);
-  Serial.print("Waiting for time sync");
-  while (now < 8 * 3600) { // wait for time to be set (8 hours is an arbitrary value)
-    delay(500);
+  while (!time(nullptr)) {
     Serial.print(".");
-    now = time(nullptr);
+    delay(1000);
   }
-  Serial.println();
-
-  if (now == 0) {
-    Serial.println("Failed to configure time using NTP!");
-  } else {
-    Serial.println("Time successfully configured using NTP.");
-    Serial.println("Current time: " + String(ctime(&now)));
-  }
+  Serial.println("Time successfully configured using NTP.");
 }
 
-
 void loop() {
-  bool accessGranted = false; // Initialize accessGranted variable
-
   // Motion sensor
   bool motion = digitalRead(inputPin);
   if (motion) {
-    Serial.println("Motion detected: " + String(motion));
+     Serial.println("Motion detected: " + String(motion));
     digitalWrite(lightPin, LOW);
     digitalWrite(lockpin, LOW);
-    //digitalWrite(soundpin,LOW);
   } else {
     Serial.println("Motion not detected: " + String(motion));
     digitalWrite(lightPin, HIGH);
     digitalWrite(lockpin, HIGH);
-    // digitalWrite(soundpin,HIGH);
   }
 
-  bool Sensor_State = digitalRead(Sensor_Pin);
+  // Sound sensor
+  bool soundDetected = digitalRead(Sensor_Pin);
   int Senor_Value = analogRead(A0);
-  Serial.println("\nSensor_State: " + String(Sensor_State));
-
-  if (Sensor_State == true) {
-    Serial.println("Sound Detected");
+  if (soundDetected) {
+    Serial.println("Sound detected \n");
   } else {
-    Serial.println("Sound Not Detected");
+    Serial.println("Sound not detected \n");
   }
 
   delay(3000);
 
-  // Reset the loop if no new card present on the sensor/reader. This saves the entire process when idle.
+  // Check for RFID card
   if (!mfrc522.PICC_IsNewCardPresent()) {
     Serial.println("No card present");
     return;
   }
 
-  // Select one of the cards
+  // Read card UID
   if (!mfrc522.PICC_ReadCardSerial()) {
     Serial.println("Failed to read card");
     return;
   }
 
-  // Dump debug info about the card; PICC_HaltA() is automatically called
+  // Dump card UID
   mfrc522.PICC_DumpToSerial(&(mfrc522.uid));
-  Serial.print("Card ID: ");
   String cardID = "";
   for (byte i = 0; i < mfrc522.uid.size; i++) {
-    cardID.concat(String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : ""));
-    cardID.concat(String(mfrc522.uid.uidByte[i], HEX));
+    cardID += String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : "");
+    cardID += String(mfrc522.uid.uidByte[i], HEX);
   }
   cardID.toUpperCase();
-  Serial.println(cardID);
+  Serial.println("Card ID: " + cardID);
 
   // Get current date and time
   String currentDate = getCurrentDate();
@@ -136,115 +117,69 @@ void loop() {
   delay(1500);
 }
 
-
 void checkBookingStatus(String cardID, String currentDate, String currentTime) {
-  bool accessGranted = false;
   Serial.println("Checking booking status...");
 
   // Make HTTP GET request to Firebase to check booking status
   String url = "https://smart-study-room-default-rtdb.firebaseio.com/.json";
   HTTPClient http;
-  http.begin(url);
-  int httpCode = http.GET();
+  if (http.begin(url)) {
+    int httpCode = http.GET();
 
-  if (httpCode == HTTP_CODE_OK) {
-    Serial.println("HTTP GET request successful");
+    if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      DynamicJsonDocument doc(2048);
+      DeserializationError error = deserializeJson(doc, payload);
 
-    String payload = http.getString();
-    Serial.println("Response payload: " + payload);
+      if (!error) {
+        JsonObject bookings = doc["bookings"];
+        for (JsonPair entry : bookings) {
+          String bookingStudentId = entry.value()["studentId"];
+          String bookingDate = entry.value()["date"];
+          String intime = entry.value()["intime"];
+          String outtime = entry.value()["outtime"];
 
-    DynamicJsonDocument doc(2048);
-    DeserializationError error = deserializeJson(doc, payload);
+          int currentHour = currentTime.substring(0, 2).toInt();
+          int currentMinute = currentTime.substring(3, 5).toInt();
 
-    if (!error) {
-      Serial.println("JSON parsing successful");
+          int inHour = intime.substring(0, 2).toInt();
+          int inMinute = intime.substring(3, 5).toInt();
 
-      JsonObject bookings = doc["bookings"];
+          int outHour = outtime.substring(0, 2).toInt();
+          int outMinute = outtime.substring(3, 5).toInt();
 
-      for (JsonPair entry : bookings) {
-        String bookingStudentId = entry.value()["studentId"];
-        String bookingDate = entry.value()["date"];
-        String intime = entry.value()["intime"];
-        String outtime = entry.value()["outtime"];
-
-        Serial.println("Booking Student ID: " + bookingStudentId);
-        Serial.println("Booking Date: " + bookingDate);
-        Serial.println("Booking In Time: " + intime);
-        Serial.println("Booking Out Time: " + outtime);
-
-        // Splitting time into hours and minutes
-        int currentHour = currentTime.substring(0, 2).toInt();
-        int currentMinute = currentTime.substring(3, 5).toInt();
-
-        int inHour = intime.substring(0, 2).toInt();
-        int inMinute = intime.substring(3, 5).toInt();
-
-        int outHour = outtime.substring(0, 2).toInt();
-        int outMinute = outtime.substring(3, 5).toInt();
-
-        Serial.println("Current Time (Hour): " + String(currentHour));
-        Serial.println("Current Time (Minute): " + String(currentMinute));
-        Serial.println("In Time (Hour): " + String(inHour));
-        Serial.println("In Time (Minute): " + String(inMinute));
-        Serial.println("Out Time (Hour): " + String(outHour));
-        Serial.println("Out Time (Minute): " + String(outMinute));
-
-        // Check if current time is within the booking time range
-        if (bookingStudentId == cardID && bookingDate == currentDate) {
-    if (currentHour > inHour || (currentHour == inHour && currentMinute >= inMinute)) {
-        if (currentHour < outHour || (currentHour == outHour && currentMinute <= outMinute)) {
+          if (bookingStudentId == cardID && bookingDate == currentDate &&
+              (currentHour > inHour || (currentHour == inHour && currentMinute >= inMinute)) &&
+              (currentHour < outHour || (currentHour == outHour && currentMinute <= outMinute))) {
             Serial.println("Access Granted");
-            accessGranted = true;
-            break;
+            return;
+          }
         }
-    }
-}
-
-}
-      }
-
-      if (!accessGranted) {
         Serial.println("Access Denied");
-        Serial.println("Current Time: " + currentTime);
-Serial.println("In Time: " + intime);
-Serial.println("Out Time: " + outtime);
-
+      } else {
+        Serial.println("Error parsing JSON response");
       }
     } else {
-      Serial.println("Error parsing JSON response");
+      Serial.println("Error getting booking status from Firebase");
     }
+    http.end();
   } else {
-    Serial.println("Error getting booking status from Firebase");
+    Serial.println("Failed to connect to Firebase");
   }
-
-  http.end();
 }
 
 String getCurrentDate() {
-  // Get current date
-  time_t now = time(nullptr); // Get the current time
-  struct tm *timeinfo = localtime(&now); // Convert the current time to the local time
-
-  // Extract year, month, and day
-  int currentYear = timeinfo->tm_year + 1900; // tm_year represents years since 1900
-  int currentMonth = timeinfo->tm_mon + 1; // tm_mon is 0-indexed
-  int currentDay = timeinfo->tm_mday;
-
-  String currentDate = String(currentYear) + "-" + String(currentMonth) + "-" + String(currentDay);
-  return currentDate;
+  time_t now = time(nullptr);
+  struct tm *timeinfo = localtime(&now);
+  char formattedDate[11];
+  strftime(formattedDate, sizeof(formattedDate), "%Y-%m-%d", timeinfo);
+  return String(formattedDate);
 }
 
 String getTimeFromArduino() {
-  // Get current time
-  time_t now = time(nullptr); // Get the current time
-  struct tm *timeinfo = localtime(&now); // Convert the current time to the local time
-
-  // Extract hour, minute, and second
-  int currentHour = timeinfo->tm_hour;
-  int currentMinute = timeinfo->tm_min;
-  int currentSecond = timeinfo->tm_sec;
-
-  String currentTime = String(currentHour) + ":" + String(currentMinute) + ":" + String(currentSecond);
-  return currentTime;
+  time_t now = time(nullptr);
+  struct tm *timeinfo = localtime(&now);
+  char formattedTime[9];
+  strftime(formattedTime, sizeof(formattedTime), "%H:%M:%S", timeinfo);
+  return String(formattedTime);
 }
-
